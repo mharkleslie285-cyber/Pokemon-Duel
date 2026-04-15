@@ -198,6 +198,7 @@
             gap: 20px;
             margin-bottom: 15px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            min-height: 80px;
         }
 
         .prompt-img {
@@ -207,6 +208,10 @@
             object-fit: cover;
             background: #eee;
             border: 3px solid var(--pokemon-blue);
+        }
+
+        .prompt-img.hidden {
+            display: none;
         }
 
         .choices-grid {
@@ -349,7 +354,7 @@
     <script>
         const apiKey = ""; 
         
-        // Default questions if no CSV is uploaded
+        // Default questions
         let quizPool = [
             { q: "What is he doing?", img: 'https://loremflickr.com/400/400/eating,boy', ans: 'eating', wrongs: ['sleeping', 'running'] },
             { q: "What is she doing?", img: 'https://loremflickr.com/400/400/reading,girl', ans: 'reading', wrongs: ['dancing', 'cooking'] },
@@ -390,7 +395,6 @@
         }
 
         // --- CSV HANDLING ---
-
         function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -404,14 +408,14 @@
                     return;
                 }
 
-                // Assuming CSV structure: Question, Image, Correct, Wrong1, Wrong2
                 const newPool = [];
                 for (let i = 1; i < rows.length; i++) {
                     const cols = rows[i].split(',').map(c => c.trim());
-                    if (cols.length < 3) continue; // Min: Question, Image (can be empty), Correct
+                    if (cols.length < 2) continue; // Min: Question, Correct
                     
                     const questionText = cols[0];
-                    const imageSource = cols[1] || `https://loremflickr.com/400/400/${cols[2].replace(/\s/g, '')}`;
+                    // If col 1 is provided but is just an empty string or whitespace, treat as no image
+                    const imageSource = cols[1] && cols[1].length > 0 ? cols[1] : null;
                     const correctAnswer = cols[2];
                     const wrongAnswers = [];
                     if (cols[3]) wrongAnswers.push(cols[3]);
@@ -434,7 +438,6 @@
         }
 
         // --- AI GENERATION ---
-
         async function useAIQuestions() {
             const loading = document.getElementById('loading');
             loading.style.display = 'flex';
@@ -498,7 +501,6 @@
         }
 
         // --- GAMEPLAY ---
-
         function startGame() {
             state.active = true;
             state.left.hp = 100;
@@ -519,30 +521,39 @@
 
         function setQuestion(side) {
             const item = quizPool[Math.floor(Math.random() * quizPool.length)];
-            
             state[side].ans = item.ans;
             
             const imgEl = document.getElementById(`img-${side}`);
-            imgEl.src = item.img.startsWith('http') ? item.img : item.img; // Simple path check
-            imgEl.onerror = () => { imgEl.src = 'https://via.placeholder.com/400?text=Quiz+Image'; };
+            if (item.img && item.img.trim().length > 0) {
+                imgEl.src = item.img;
+                imgEl.classList.remove('hidden');
+                imgEl.onerror = () => { imgEl.classList.add('hidden'); };
+            } else {
+                imgEl.classList.add('hidden');
+            }
             
             document.getElementById(`q-text-${side}`).innerText = item.q;
 
-            // Gather choices: correct answer + wrongs
+            // Start with correct answer
             let choices = [item.ans];
             
-            // If the item has explicit wrongs, use them
+            // Add existing wrong answers
             if (item.wrongs && item.wrongs.length > 0) {
-                choices = choices.concat(item.wrongs);
+                item.wrongs.forEach(w => {
+                    if (w && w.trim().length > 0 && !choices.includes(w)) {
+                        choices.push(w);
+                    }
+                });
             }
             
-            // Fill up to 4 if necessary using random answers from pool
-            while (choices.length < 4 && quizPool.length > 3) {
+            // Note: If choices.length is 2, it stays 2. 
+            // We only fill up if the pool allows and we have less than 2.
+            while (choices.length < 2 && quizPool.length > 1) {
                 let randomAns = quizPool[Math.floor(Math.random() * quizPool.length)].ans;
                 if (!choices.includes(randomAns)) choices.push(randomAns);
             }
             
-            // Shuffle
+            // Shuffle choices
             choices.sort(() => Math.random() - 0.5);
 
             const grid = document.getElementById(`choices-${side}`);
@@ -572,7 +583,6 @@
             const panel = document.getElementById(`panel-${side}`);
             panel.classList.add('frozen');
 
-            // 2 Second Freeze Penalty for wrong answers
             setTimeout(() => {
                 state[side].frozen = false;
                 panel.classList.remove('frozen');
